@@ -1,0 +1,253 @@
+#include <hidef.h>      /* common defines and macros */
+#include "derivative.h"      /* derivative-specific definitions */
+#include "SCI.h"
+
+//prototypes
+void setClk(void);
+void Lab4Delay1ms(unsigned int numTimes);
+void OutCRLF(void);
+
+int getAngle(int x);
+
+void OutCRLF(void){
+  SCI_OutChar(CR);
+  SCI_OutChar(LF);
+  PTJ ^=0x20;
+}
+
+int counter;
+int val;
+float angleVal;
+int  tens;
+int ones ;
+
+void main(void) {
+counter=0;
+angleVal=0.0;
+tens=0;
+ones=0;
+
+  setClk();
+ 
+ TSCR1 = 0x90;
+ TSCR2 = 0x01;
+ TIOS = 0xFE;
+ PERT = 0x01;
+ TCTL3 = 0x00;
+ TCTL4 = 0x02;
+ 
+ TIE = 0x01;
+ 
+ ATDCTL0 = 0x01;
+	ATDCTL1 = 0b00101111; 	// set for 10-bit resolution
+	ATDCTL3 = 0x90; 	// right justified, one sample per sequence
+	ATDCTL4 = 0b00000011; 	// prescaler = 3; ATD clock = 8MHz / (2 * (3 + 1)) 
+	ATDCTL5 = 0x27; //examine channel 7 (an7)
+ 
+ DDR1AD = 0b00011111;
+ DDRP = 0b00111010;
+
+  SCI_Init(38400);
+  SCI_OutString("start");
+  OutCRLF();
+
+	EnableInterrupts;
+
+  for(;;) {
+  val=ATDDR0;
+  angleVal=getAngle(val);
+
+  tens=angleVal/10;
+  ones = (angleVal)-(10*tens);
+
+  //SCI_OutString(" atens reading: ");
+  //SCI_OutUDec(tens);
+  
+  if(counter==0){        //mode 0  BCD
+  
+    if(tens==0){                 //checking tens (upper 4bits)
+      PT1AD = 0b00000000;      
+    }
+  
+    if(tens==1){
+      PT1AD = 0b00010000;
+    }
+    if(tens==2){
+     PT1AD = 0b00001000; 
+    }
+    if(tens==3){
+     PT1AD = 0b00011000; 
+    }
+    if(tens==4){
+     PT1AD = 0b00000100; 
+    }
+    if(tens==5){
+      PT1AD = 0b00010100;
+    }
+    if(tens==6){
+     PT1AD = 0b00001100; 
+    }
+    if(tens==7){
+     PT1AD = 0b00011100; 
+    }
+    if(tens==8){
+     PT1AD = 0b00000010; 
+    }
+    if(tens==9){
+     PT1AD = 0b00010010; 
+    }
+    
+    if(ones==0){
+      PT1AD = 0b00000000;      
+    }
+  
+    if(ones==1){            //checking ones now    (lower 4bits/leds)
+      PTP = 0b00100000;
+    }
+    if(ones==2){
+     PTP = 0b00010000; 
+    }
+    if(ones==3){
+     PTP = 0b00110000;
+    }
+    if(ones==4){
+     PTP = 0b00001000; 
+    }
+    if(ones==5){
+      PTP = 0b00101000;
+    }
+    if(ones==6){
+     PTP = 0b00011000; 
+    }
+    if(ones==7){
+     PTP = 0b00111000; 
+    }
+    if(ones==8){
+     PTP = 0b00000010; 
+    }
+    if(ones==9){
+     PTP = 0b00100010; 
+    }
+  }
+  
+  if(counter==1){      //mode 1   Linear Bar
+
+    //SCI_OutString("Linear Bar Mode: ");
+    
+    SCI_OutChar(angleVal);
+    
+    if(ones>4){
+    tens++;
+    }
+    
+    if(tens==0){
+       PT1AD = 0b00000000;
+       PTP = 0b00000000;
+    }
+    
+    if(tens==1){
+       PT1AD = 0b00000001;
+       PTP = 0b00000000; 
+    }
+    
+    if(tens==2){
+       PT1AD = 0b00000011;
+       PTP = 0b00000000;
+    }
+    
+    if(tens==3){
+       PT1AD = 0b00000111;
+       PTP = 0b00000000;
+    }
+    
+    if(tens==4){
+      PT1AD = 0b00001111;
+      PTP = 0b00000000; 
+    }
+    if(tens==5){
+       PT1AD = 0b00011111;
+       PTP = 0b00000000;
+    }
+    if(tens==6){
+       PT1AD = 0b00011111;
+       PTP = 0b00000010;
+    }
+    if(tens==7){
+       PT1AD = 0b00011111;
+       PTP = 0b00001010;
+    }
+    if(tens==8){
+       PT1AD = 0b00011111;
+       PTP = 0b00011010;
+    }
+    if(tens==9){
+       PT1AD = 0b00011111;
+       PTP = 0b00111010;
+    }
+  }
+     Lab4Delay1ms(300);
+  }
+  
+}
+
+interrupt  VectorNumber_Vtimch0 void ISR_Vtimch0(void)
+{
+  unsigned int temp; //DON'T EDIT THIS
+ 
+  PTJ ^= 0x01;  	//Toggles pin/LED state
+  counter = (++counter % 2);
+  temp = TC0;   	//Refer back to TFFCA, we enabled FastFlagClear, thus by reading the Timer Capture input we automatically clear the flag, allowing another TIC interrupt
+  }
+
+#define VCOFRQ 0x00        //VCOFRQ[1:0]  32MHz <= VCOCLK <= 48MHz
+#define SYNDIV 0x05        //SYNDIV[5:0]  Syn divide is 11
+#define REFFRQ 0x40        //REFFRQ[1:0]  2MHz < fREF <= 6MHz
+#define REFDIV 0x01        //REFDIV[3:0]  Ref Divide is 1
+
+void setClk(void){
+  CPMUPROT = 0x26;               //Protection of clock configuration is disabled
+								 // NOTE: On some Esduinos you may need to use CPMUPROT=0. Try both and see which value allows you to change the registers below in your debugger!
+  
+  CPMUCLKS = 0x80;               //PLLSEL=1. Select Bus Clock Source:  PLL clock or Oscillator.
+  
+  CPMUOSC = 0x80;                //OSCE=1. Select Clock Reference for PLLclk as:fOSC (8 MHz).
+  
+  CPMUREFDIV = REFFRQ+REFDIV;    //Set fREF divider and selects reference clock frequency Range. fREF= 4 MHz.  
+  
+  CPMUSYNR=VCOFRQ + SYNDIV;      //Set Syn divide and selects VCO frequency range. fVCO = 48 MHz.
+  
+  CPMUPOSTDIV=0b00000010;              //Set Post Divider to 2. fPLL= 16 MHz.
+                                 //Overall clock speed is fBUS=fPLL/2=8 MHz  
+  
+  while (CPMUFLG_LOCK == 0) {}  //Wait for PLL to achieve desired tolerance of target frequency. NOTE: For use when the source clock is PLL. comment out when using external oscillator as source clock 
+ 
+ CPMUPROT = 1;                  //Protection for clock configuration is reenabled 
+  //Note: If you change your clock speed you will need to update delay1ms function to give a 1 ms delay
+}
+
+void Lab4Delay1ms(unsigned int numTimes){
+  unsigned int i;
+  unsigned int j;
+ 
+  for(j = 0; j<numTimes; j++){
+    for(i = 0; i<87; i++){
+  	  // Delay
+  	  PTJ = PTJ;
+  	  PTJ = PTJ;
+  	  PTJ = PTJ;
+  	  PTJ = PTJ;
+  	  PTJ = PTJ;
+  	}
+  }  
+}
+
+int getAngle(int x){
+ 
+ float angle;
+ angle=-0.87*x + 453.26;
+ if(angle<0){
+  angle=angle*-1;
+ }
+ return(angle); 
+  
+}
